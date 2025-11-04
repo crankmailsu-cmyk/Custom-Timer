@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Customizable Timer</title>
+  <style>
+    :root{
+      --bg: #000;
+      --fg: #fff;
+      --menu-bg: #000;
+      --button-border: rgba(255,255,255,0.9);
+      --control-foreground: #ffffff;
+      --controls-scale: 1;
+    }
+
+    html,body{height:100%;margin:0;}
+    body {
+      font-family: "Poppins", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      background-color: var(--bg);
+      color: var(--fg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      background-size: cover;
+      background-position: center;
+      transition: background 0.3s ease-in-out;
+      padding: 24px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    /* Stage stacks vertically: timer on top, controls below */
+    #stage{
+      display:flex;
+      flex-direction: column;
+      align-items:center;
+      justify-content:center;
+      gap:18px;
+      width:100%;
+      max-width:1200px;
+      box-sizing: border-box;
+    }
+
+    #timer {
+      font-size: clamp(2.6rem, 6vw, 5.5rem);
+      font-weight: 700;
+      margin: 0;
+      text-shadow: 0 0 10px rgba(255,255,255,0.12);
+      line-height:1;
+      color: var(--fg);
+      user-select: none;
+      touch-action: none;
+      transition: transform 0.12s ease, background 0.15s ease, border 0.15s ease, padding 0.15s ease;
+      text-align:center;
+    }
+
+    /* Boxed timer style */
+    #timer.boxed {
+      padding: 14px 22px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.12);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+    }
+
+    .buttons {
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:center;
+      align-items:center;
+      user-select: none;
+      touch-action: none;
+      transform-origin: center;
+      transform: scale(var(--controls-scale));
+    }
+
+    .buttons button {
+      background-color: transparent;
+      color: var(--control-foreground);
+      border: 1px solid var(--button-border);
+      padding: 10px 16px;
+      margin: 0;
+      border-radius: 8px;
+      font-size: 18px;
+      cursor: pointer;
+      transition: 0.18s ease;
+      min-width:56px;
+      height:52px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+    }
+
+    .buttons button:hover{ background-color: var(--fg); color: var(--bg); transform: translateY(-2px); }
+
+    /* hamburger */
+    #menuIcon {
+      position: absolute;
+      top: 14px;
+      left: 16px;
+      cursor: pointer;
+      font-size: 22px;
+      user-select: none;
+      background: transparent;
+      border: 1px solid var(--button-border);
+      padding: 6px 8px;
+      border-radius: 6px;
+      color: var(--fg);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      z-index: 1001;
+    }
+
+    /* menu */
+    #menuBox {
+      position: absolute;
+      top: 56px;
+      left: 12px;
+      background-color: var(--menu-bg);
+      border: 1px solid var(--button-border);
+      border-radius: 8px;
+      padding: 12px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1000;
+      min-width: 260px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+      max-height: calc(100vh - 120px);
+      overflow: auto; /* native scroll */
+      position: absolute;
+    }
+
+    @media (min-width:900px){
+      #menuBox{ position: fixed; left: 20px; top: 80px; display:flex; width:320px; max-height: calc(100vh - 160px); overflow:auto; }
+      body{ padding: 40px; }
+      #stage{ gap:48px; }
+      #timer{ font-size: clamp(3rem, 3.6vw, 6.25rem); text-align:center; }
+      .buttons{ justify-content:center; }
+      .buttons button{ font-size:20px; min-width:64px; height:56px; border-radius:10px; }
+      #editToolbar{ top: 20px; right: 24px; }
+    }
+
+    #menuBox label,
+    #menuBox button,
+    #menuBox input,
+    #menuBox select {
+      color: var(--fg);
+      background-color: transparent;
+      border: none;
+      font-size: 14px;
+      cursor: pointer;
+      width:100%;
+      text-align:left;
+    }
+
+    #menuBox small { color: #bbb; display:block; margin-top:4px; }
+
+    #menuBox button {
+      border: 1px solid var(--button-border);
+      border-radius: 6px;
+      padding: 8px;
+      transition: 0.18s;
+      text-align:center;
+    }
+
+    #menuBox button:hover { background-color: var(--fg); color: var(--bg); }
+
+    #bgUpload,#musicUpload,#colorPicker,#symbolColorPicker{ display:block; width:100%; padding:6px 0; background:transparent; }
+
+    .hidden{ display:none !important; }
+
+    hr { border: none; border-top: 1px solid rgba(255,255,255,0.12); margin:8px 0; }
+
+    /* Edit-mode overlays and handles */
+    .edit-overlay {
+      position: absolute;
+      border: 2px dashed rgba(255,255,255,0.18);
+      background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      pointer-events: none;
+      z-index: 1100;
+    }
+
+    .handle {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      background: var(--fg);
+      border-radius: 2px;
+      right: -9px;
+      bottom: -9px;
+      cursor: se-resize;
+      z-index: 1200;
+      pointer-events: auto;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:12px;
+      color:var(--bg);
+    }
+
+    .overlay-controls {
+      position: absolute;
+      top: -28px;
+      right: 0;
+      display:flex;
+      gap:6px;
+      pointer-events: auto;
+      z-index:1201;
+    }
+
+    .overlay-controls button {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--fg);
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor:pointer;
+    }
+
+    .move-hint { position: absolute; top: -20px; left: 0; font-size: 12px; color: #ccc; pointer-events:none; }
+
+    .movable {
+      position: relative;
+      transition: none;
+    }
+
+    .movable.editing {
+      position: absolute;
+      will-change: transform, left, top;
+    }
+
+    #editToolbar {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      display: none;
+      gap: 8px;
+      z-index: 1300;
+      background: rgba(0,0,0,0.6);
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+      align-items: center;
+    }
+
+    #editToolbar button {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--fg);
+      padding: 6px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    #editToolbar button:hover { background: var(--fg); color: var(--bg); }
+
+    @media (prefers-reduced-motion: reduce){
+      *{ transition: none !important; animation: none !important; }
+    }
+
+    @media (max-width:420px){
+      #menuBox{ left:8px; right:8px; min-width: auto; top:56px; }
+      #menuIcon{ left: 10px; }
+      .handle { width: 20px; height: 20px; right: -10px; bottom: -10px; }
+      #editToolbar { right: 10px; top: 50px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="menuIcon" aria-haspopup="true" aria-expanded="false" aria-controls="menuBox" title="Open menu">
+    ☰
+  </div>
+
+  <div id="menuBox" role="menu" aria-hidden="true">
+    <label for="bgUpload">Change Background (image)</label>
+    <input id="bgUpload" type="file" accept="image/*" aria-label="Upload background image">
+
+    <label for="colorPicker">Timer Color</label>
+    <input id="colorPicker" type="color" value="#ffffff" aria-label="Choose timer color">
+
+    <label for="symbolColorPicker">Controls / Symbols Color</label>
+    <input id="symbolColorPicker" type="color" value="#ffffff" aria-label="Choose controls/symbols color">
+
+    <label for="musicUpload">Upload Music (loop)</label>
+    <input id="musicUpload" type="file" accept="audio/*" aria-label="Upload music file">
+
+    <div style="display:flex;gap:8px;">
+      <button id="playMusicBtn" class="hidden" aria-hidden="true">▶︎ Play Music</button>
+      <button id="stopMusicBtn" class="hidden" aria-hidden="true">⏹ Stop Music</button>
+    </div>
+
+    <hr>
+
+    <button id="switchBtn" title="Toggle emoji/symbol buttons">Switch to Emoji Version</button>
+    <button id="toggleControlsBtn" title="Show or hide timer controls">Hide Timer Controls</button>
+
+    <!-- Toggle between boxed and normal timer -->
+    <button id="toggleTimerBoxBtn" title="Toggle boxed timer">Switch to Boxed Timer</button>
+
+    <!-- Only the toggle for entering edit mode remains inside the menu -->
+    <button id="editModeBtn" title="Toggle edit mode (move/resize timer & controls)">Enter Edit Mode</button>
+
+    <small>Shortcuts: Space = Start/Pause, R = Reset, M = Menu, E = Edit mode. In edit mode drag the timer or controls and use the corner handle or + / - to resize.</small>
+  </div>
+
+  <!-- Floating edit toolbar (outside the menu, visible while editing) -->
+  <div id="editToolbar" aria-hidden="true">
+    <button id="saveOutsideBtn">Save Changes</button>
+    <button id="exitEditOutsideBtn">Exit Edit Mode</button>
+    <button id="resetOutsideBtn">Reset Edits</button>
+  </div>
+
+  <main id="stage">
+    <h1 id="timer" role="timer" aria-live="polite" class="movable">00:00:00</h1>
+
+    <div class="buttons movable" id="controlButtons" aria-hidden="false">
+      <button id="startBtn" aria-pressed="false" aria-label="Start timer">▶︎</button>
+      <button id="pauseBtn" disabled aria-disabled="true" aria-label="Pause timer">||</button>
+      <button id="resetBtn" aria-label="Reset timer">↺</button>
+    </div>
+  </main>
+
+  <!-- Edit overlays are created dynamically -->
+
+  <script>
+    // ====== Persistent settings keys ======
+    const KEY_SECONDS = 'cst_timer_seconds_v1';
+    const KEY_RUNNING = 'cst_timer_running_v1';
+    const KEY_BG = 'cst_timer_bg_v1';
+    const KEY_COLOR = 'cst_timer_color_v1';
+    const KEY_MUSIC = 'cst_timer_music_v1';
+    const KEY_EMOJI = 'cst_timer_emoji_v1';
+    const KEY_CONTROLS_VISIBLE = 'cst_timer_controls_visible_v1';
+    const KEY_CONTROL_COLOR = 'cst_timer_control_color_v1';
+    const KEY_TIMER_POS = 'cst_timer_pos_v1';
+    const KEY_TIMER_SIZE = 'cst_timer_size_v1';
+    const KEY_BUTTON_POS = 'cst_buttons_pos_v1';
+    const KEY_BUTTON_SIZE = 'cst_buttons_size_v1';
+    const KEY_BUTTON_SCALE = 'cst_buttons_scale_v1';
+    const KEY_EDIT_MODE = 'cst_timer_editmode';
+    const KEY_MENU_VISIBLE = 'cst_timer_menu_visible_v1';
+    const KEY_TIMER_BOX = 'cst_timer_box_v1'; // NEW: boxed timer mode
+
+    // ====== Elements ======
+    const timerDisplay = document.getElementById('timer');
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const menuIcon = document.getElementById('menuIcon');
+    const menuBox = document.getElementById('menuBox');
+    const bgUpload = document.getElementById('bgUpload');
+    const colorPicker = document.getElementById('colorPicker');
+    const symbolColorPicker = document.getElementById('symbolColorPicker');
+    const musicUpload = document.getElementById('musicUpload');
+    const playMusicBtn = document.getElementById('playMusicBtn');
+    const stopMusicBtn = document.getElementById('stopMusicBtn');
+    const switchBtn = document.getElementById('switchBtn');
+    const toggleControlsBtn = document.getElementById('toggleControlsBtn');
+    const editModeBtn = document.getElementById('editModeBtn');
+    const controlButtons = document.getElementById('controlButtons');
+    const toggleTimerBoxBtn = document.getElementById('toggleTimerBoxBtn');
+
+    // external toolbar buttons
+    const editToolbar = document.getElementById('editToolbar');
+    const saveOutsideBtn = document.getElementById('saveOutsideBtn');
+    const exitEditOutsideBtn = document.getElementById('exitEditOutsideBtn');
+    const resetOutsideBtn = document.getElementById('resetOutsideBtn');
+
+    // ====== Timer state ======
+    let timerInterval = null;
+    let seconds = 0;
+    let isRunning = false;
+    let emojiVersion = false;
+    let controlsVisible = true;
+
+    // ====== Audio ======
+    let audio = null;
+
+    // ====== Edit mode state ======
+    let editMode = false;
+    let dragState = null; // {target, startX, startY, origLeft, origTop}
+    let resizeState = null; // {target, startX, startY, startScale}
+
+    // ====== Utilities ======
+    function formatTime(s){
+      const hrs = String(Math.floor(s / 3600)).padStart(2,'0');
+      const mins = String(Math.floor((s % 3600) / 60)).padStart(2,'0');
+      const secs = String(s % 60).padStart(2,'0');
+      return `${hrs}:${mins}:${secs}`;
+    }
+
+    function updateDisplay(){
+      timerDisplay.textContent = formatTime(seconds);
+    }
+
+    function saveToLocal(key, value){
+      try { localStorage.setItem(key, value); } catch(e){}
+    }
+
+    function loadFromLocal(key){
+      try { return localStorage.getItem(key); } catch(e){ return null; }
+    }
+
+    function saveState(){
+      saveToLocal(KEY_SECONDS, String(seconds));
+      saveToLocal(KEY_RUNNING, isRunning ? '1' : '0');
+    }
+
+    // ====== Timer control functions ======
+    function startTimer(){
+      if (isRunning) return;
+      isRunning = true;
+      timerInterval = setInterval(()=>{ seconds++; updateDisplay(); saveState(); }, 1000);
+      startBtn.disabled = true;
+      startBtn.setAttribute('aria-pressed','true');
+      pauseBtn.disabled = false;
+      pauseBtn.removeAttribute('aria-disabled');
+      saveState();
+    }
+
+    function pauseTimer(){
+      if(!isRunning) return;
+      clearInterval(timerInterval);
+      timerInterval = null;
+      isRunning = false;
+      startBtn.disabled = false;
+      startBtn.setAttribute('aria-pressed','false');
+      pauseBtn.disabled = true;
+      pauseBtn.setAttribute('aria-disabled','true');
+      saveState();
+    }
+
+    function resetTimer(){
+      clearInterval(timerInterval);
+      timerInterval = null;
+      seconds = 0;
+      isRunning = false;
+      updateDisplay();
+      startBtn.disabled = false;
+      startBtn.setAttribute('aria-pressed','false');
+      pauseBtn.disabled = true;
+      pauseBtn.setAttribute('aria-disabled','true');
+      saveState();
+    }
+
+    // ====== Event listeners ======
+    startBtn.addEventListener('click', startTimer);
+    pauseBtn.addEventListener('click', pauseTimer);
+    resetBtn.addEventListener('click', resetTimer);
+
+    // Keyboard shortcuts: Space = toggle start/pause, R = reset, M = toggle menu, E = edit mode
+    document.addEventListener('keydown', (e)=>{
+      if (e.code === 'Space'){
+        e.preventDefault();
+        if(isRunning) pauseTimer(); else startTimer();
+      } else if (e.key === 'r' || e.key === 'R'){
+        resetTimer();
+      } else if (e.key === 'm' || e.key === 'M'){
+        toggleMenu();
+      } else if (e.key === 'e' || e.key === 'E'){
+        toggleEditMode();
+      }
+    });
+
+    // ====== Menu visibility (persisted and closable) ======
+    function setMenuVisible(visible, persist = true){
+      menuBox.style.display = visible ? 'flex' : 'none';
+      menuBox.setAttribute('aria-hidden', visible ? 'false' : 'true');
+      menuIcon.setAttribute('aria-expanded', visible ? 'true' : 'false');
+      if (persist) saveToLocal(KEY_MENU_VISIBLE, visible ? '1' : '0');
+    }
+
+    function toggleMenu(){
+      const isOpen = window.getComputedStyle(menuBox).display === 'flex';
+      setMenuVisible(!isOpen, true);
+    }
+
+    menuIcon.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      toggleMenu();
+    });
+
+    // clicking outside closes menu
+    document.addEventListener('click', (ev)=>{
+      if (!menuBox.contains(ev.target) && !menuIcon.contains(ev.target)){
+        const shown = window.getComputedStyle(menuBox).display === 'flex';
+        if (shown) {
+          setMenuVisible(false, true);
+        }
+      }
+    });
+
+    // on resize respect user pref or default to visible on wide
+    function syncMenuAria(){
+      const isWide = window.matchMedia('(min-width:900px)').matches;
+      const pref = loadFromLocal(KEY_MENU_VISIBLE);
+      if (pref === '1') setMenuVisible(true, false);
+      else if (pref === '0') setMenuVisible(false, false);
+      else setMenuVisible(isWide, false);
+    }
+    window.addEventListener('resize', syncMenuAria);
+
+    // ====== Background upload ======
+    bgUpload.addEventListener('change', (ev)=>{
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        document.body.style.backgroundImage = `url('${dataUrl}')`;
+        saveToLocal(KEY_BG, dataUrl);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // ====== Timer color ======
+    colorPicker.addEventListener('input', ()=>{
+      timerDisplay.style.color = colorPicker.value;
+      saveToLocal(KEY_COLOR, colorPicker.value);
+    });
+
+    // ====== Symbol/control color ======
+    symbolColorPicker.addEventListener('input', ()=>{
+      document.documentElement.style.setProperty('--control-foreground', symbolColorPicker.value);
+      saveToLocal(KEY_CONTROL_COLOR, symbolColorPicker.value);
+    });
+
+    // ====== Music upload ======
+    musicUpload.addEventListener('change', (ev)=>{
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e)=>{
+        const dataUrl = e.target.result;
+        if (audio){
+          try { audio.pause(); } catch(e){}
+          audio = null;
+        }
+        audio = new Audio(dataUrl);
+        audio.loop = true;
+        playMusicBtn.classList.remove('hidden');
+        playMusicBtn.setAttribute('aria-hidden','false');
+        stopMusicBtn.classList.remove('hidden');
+        stopMusicBtn.setAttribute('aria-hidden','false');
+        saveToLocal(KEY_MUSIC, dataUrl);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    playMusicBtn.addEventListener('click', ()=>{ if(audio) audio.play(); });
+    stopMusicBtn.addEventListener('click', ()=>{ if(audio) audio.pause(); });
+
+    // ====== Switch emoji/symbol ======
+    switchBtn.addEventListener('click', ()=>{
+      emojiVersion = !emojiVersion;
+      applyEmojiVersion();
+      saveToLocal(KEY_EMOJI, emojiVersion ? '1' : '0');
+    });
+
+    function applyEmojiVersion(){
+      if (emojiVersion){
+        startBtn.textContent = '⏯️';
+        pauseBtn.textContent = '⏸️';
+        resetBtn.textContent = '🔄';
+        switchBtn.textContent = 'Switch to Symbol Version';
+      } else {
+        startBtn.textContent = '▶︎';
+        pauseBtn.textContent = '||';
+        resetBtn.textContent = '↺';
+        switchBtn.textContent = 'Switch to Emoji Version';
+      }
+    }
+
+    // ====== Show/hide controls ======
+    toggleControlsBtn.addEventListener('click', ()=>{
+      controlsVisible = !controlsVisible;
+      controlButtons.style.display = controlsVisible ? 'flex' : 'none';
+      toggleControlsBtn.textContent = controlsVisible ? 'Hide Timer Controls' : 'Show Timer Controls';
+      saveToLocal(KEY_CONTROLS_VISIBLE, controlsVisible ? '1' : '0');
+    });
+
+    // ====== Toggle boxed timer mode (new) ======
+    function setTimerBoxed(boxed, persist = true){
+      if (boxed) {
+        timerDisplay.classList.add('boxed');
+        toggleTimerBoxBtn.textContent = 'Switch to Normal Timer';
+      } else {
+        timerDisplay.classList.remove('boxed');
+        toggleTimerBoxBtn.textContent = 'Switch to Boxed Timer';
+      }
+      if (persist) saveToLocal(KEY_TIMER_BOX, boxed ? '1' : '0');
+    }
+
+    toggleTimerBoxBtn.addEventListener('click', ()=>{
+      const isBoxed = timerDisplay.classList.contains('boxed');
+      setTimerBoxed(!isBoxed, true);
+    });
+
+    // ====== Edit mode: move & resize + save/reset (toolbar outside menu) ======
+    editModeBtn.addEventListener('click', ()=> toggleEditMode());
+    saveOutsideBtn.addEventListener('click', ()=> { saveEdits(); toggleEditMode(false); });
+    exitEditOutsideBtn.addEventListener('click', ()=> toggleEditMode(false));
+    resetOutsideBtn.addEventListener('click', resetEdits);
+
+    function toggleEditMode(force){
+      editMode = typeof force === 'boolean' ? force : !editMode;
+      editModeBtn.textContent = editMode ? 'Exit Edit Mode' : 'Enter Edit Mode';
+      editToolbar.style.display = editMode ? 'flex' : 'none';
+      editToolbar.setAttribute('aria-hidden', editMode ? 'false' : 'true');
+      applyEditMode(editMode);
+      saveToLocal(KEY_EDIT_MODE, editMode ? '1' : '0');
+    }
+
+    function applyEditMode(on){
+      [timerDisplay, controlButtons].forEach(el => {
+        if (on){
+          el.classList.add('editing');
+          createOverlayFor(el);
+        } else {
+          el.classList.remove('editing');
+          removeOverlayFor(el);
+        }
+      });
+    }
+
+    function createOverlayFor(el){
+      removeOverlayFor(el);
+      const rect = el.getBoundingClientRect();
+      const overlay = document.createElement('div');
+      overlay.className = 'edit-overlay';
+      const identifier = el.id || (el === timerDisplay ? 'timer' : 'controlButtons');
+      overlay.dataset.for = identifier;
+      overlay.style.left = rect.left + 'px';
+      overlay.style.top = rect.top + 'px';
+      overlay.style.width = rect.width + 'px';
+      overlay.style.height = rect.height + 'px';
+
+      const controlsWrap = document.createElement('div');
+      controlsWrap.className = 'overlay-controls';
+
+      const minusBtn = document.createElement('button');
+      minusBtn.type = 'button';
+      minusBtn.textContent = '−';
+      minusBtn.title = 'Decrease size';
+      minusBtn.addEventListener('click', (ev)=> { ev.stopPropagation(); adjustSize(el, -1); });
+
+      const plusBtn = document.createElement('button');
+      plusBtn.type = 'button';
+      plusBtn.textContent = '+';
+      plusBtn.title = 'Increase size';
+      plusBtn.addEventListener('click', (ev)=> { ev.stopPropagation(); adjustSize(el, +1); });
+
+      controlsWrap.appendChild(minusBtn);
+      controlsWrap.appendChild(plusBtn);
+
+      overlay.appendChild(controlsWrap);
+
+      const hint = document.createElement('div');
+      hint.className = 'move-hint';
+      hint.textContent = 'drag to move';
+      overlay.appendChild(hint);
+
+      const handle = document.createElement('div');
+      handle.className = 'handle';
+      handle.title = 'Drag to resize';
+      handle.textContent = '↔';
+      overlay.appendChild(handle);
+
+      document.body.appendChild(overlay);
+
+      const left = rect.left;
+      const top = rect.top;
+      el.style.left = left + 'px';
+      el.style.top = top + 'px';
+      el.style.position = 'absolute';
+      el.style.zIndex = 1200;
+      el.style.touchAction = 'none';
+
+      el.addEventListener('pointerdown', onPointerDownMove);
+      handle.addEventListener('pointerdown', onPointerDownResize);
+
+      overlay._targetEl = el;
+      overlay._handle = handle;
+
+      requestAnimationFrame(()=> syncOverlayPosition(el, overlay));
+    }
+
+    function removeOverlayFor(el){
+      const overlays = document.querySelectorAll(`.edit-overlay`);
+      overlays.forEach(o=>{
+        if (o._targetEl === el || o.dataset.for === el.id) o.remove();
+      });
+      el.removeEventListener('pointerdown', onPointerDownMove);
+      el.style.zIndex = '';
+      el.style.touchAction = '';
+    }
+
+    function syncOverlayPosition(el, overlay){
+      if (!document.body.contains(overlay) || !document.body.contains(el)) return;
+      const rect = el.getBoundingClientRect();
+      overlay.style.left = rect.left + 'px';
+      overlay.style.top = rect.top + 'px';
+      overlay.style.width = rect.width + 'px';
+      overlay.style.height = rect.height + 'px';
+      if (editMode) requestAnimationFrame(()=> syncOverlayPosition(el, overlay));
+    }
+
+    // dragging
+    function onPointerDownMove(e){
+      if (!editMode) return;
+      if (e.target.closest('.overlay-controls') || e.target.closest('.handle')) return;
+      e.preventDefault();
+      const el = e.currentTarget;
+      dragState = {
+        target: el,
+        startX: e.clientX,
+        startY: e.clientY,
+        origLeft: parseFloat(el.style.left || 0),
+        origTop: parseFloat(el.style.top || 0)
+      };
+      try { el.setPointerCapture(e.pointerId); } catch(e){}
+      document.addEventListener('pointermove', onPointerMove);
+      document.addEventListener('pointerup', onPointerUp);
+    }
+
+    function onPointerMove(e){
+      if (!dragState) return;
+      const dx = e.clientX - dragState.startX;
+      const dy = e.clientY - dragState.startY;
+      const el = dragState.target;
+      const newLeft = dragState.origLeft + dx;
+      const newTop = dragState.origTop + dy;
+      el.style.left = newLeft + 'px';
+      el.style.top = newTop + 'px';
+      if (el === timerDisplay){
+        saveToLocal(KEY_TIMER_POS, JSON.stringify({left:newLeft, top:newTop}));
+      } else if (el === controlButtons){
+        saveToLocal(KEY_BUTTON_POS, JSON.stringify({left:newLeft, top:newTop}));
+      }
+    }
+
+    function onPointerUp(e){
+      if (dragState && dragState.target){
+        try { dragState.target.releasePointerCapture(e.pointerId); } catch(err){}
+      }
+      dragState = null;
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+    }
+
+    // resizing via handle
+    function onPointerDownResize(e){
+      if (!editMode) return;
+      e.preventDefault();
+      const handle = e.currentTarget;
+      const overlay = handle.closest('.edit-overlay');
+      if (!overlay) return;
+      const target = overlay._targetEl || (overlay.dataset.for === 'timer' ? timerDisplay : controlButtons);
+
+      const computed = getComputedStyle(document.documentElement);
+      const startScale = parseFloat(computed.getPropertyValue('--controls-scale')) || 1;
+      const startFont = parseFloat(getComputedStyle(target).fontSize) || 32;
+
+      resizeState = {
+        target,
+        startX: e.clientX,
+        startY: e.clientY,
+        startScale,
+        startFontSize: startFont
+      };
+      try { handle.setPointerCapture(e.pointerId); } catch(e){}
+      document.addEventListener('pointermove', onPointerResizeMove);
+      document.addEventListener('pointerup', onPointerResizeUp);
+    }
+
+    function onPointerResizeMove(e){
+      if (!resizeState) return;
+      const dx = e.clientX - resizeState.startX;
+      const dy = e.clientY - resizeState.startY;
+      const delta = Math.max(dx, dy);
+      const targ = resizeState.target;
+      if (targ === timerDisplay){
+        const newSize = Math.max(18, resizeState.startFontSize + delta * 0.2);
+        targ.style.fontSize = newSize + 'px';
+        saveToLocal(KEY_TIMER_SIZE, newSize);
+      } else if (targ === controlButtons){
+        const newScale = Math.max(0.4, resizeState.startScale + delta * 0.0025);
+        applyControlScale(newScale);
+        saveToLocal(KEY_BUTTON_SCALE, newScale);
+      }
+    }
+
+    function onPointerResizeUp(e){
+      if (resizeState && resizeState.target){
+        try { resizeState.target.releasePointerCapture(e.pointerId); } catch(err){}
+      }
+      resizeState = null;
+      document.removeEventListener('pointermove', onPointerResizeMove);
+      document.removeEventListener('pointerup', onPointerResizeUp);
+    }
+
+    // adjust size using + / - overlay buttons
+    function adjustSize(el, direction){
+      if (el === timerDisplay){
+        const current = parseFloat(getComputedStyle(el).fontSize) || 36;
+        const newSize = Math.max(18, Math.round(current + direction * 4));
+        el.style.fontSize = newSize + 'px';
+        saveToLocal(KEY_TIMER_SIZE, newSize);
+      } else if (el === controlButtons){
+        const currentScale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--controls-scale')) || 1;
+        const newScale = Math.max(0.4, Math.round((currentScale + direction * 0.05) * 100) / 100);
+        applyControlScale(newScale);
+        saveToLocal(KEY_BUTTON_SCALE, newScale);
+      }
+    }
+
+    function applyControlScale(scale){
+      document.documentElement.style.setProperty('--controls-scale', scale);
+    }
+
+    function saveEdits(){
+      const tRect = timerDisplay.getBoundingClientRect();
+      saveToLocal(KEY_TIMER_POS, JSON.stringify({left: parseFloat(timerDisplay.style.left || tRect.left), top: parseFloat(timerDisplay.style.top || tRect.top)}));
+      const timerSize = parseFloat(getComputedStyle(timerDisplay).fontSize);
+      saveToLocal(KEY_TIMER_SIZE, timerSize);
+
+      const bRect = controlButtons.getBoundingClientRect();
+      saveToLocal(KEY_BUTTON_POS, JSON.stringify({left: parseFloat(controlButtons.style.left || bRect.left), top: parseFloat(controlButtons.style.top || bRect.top)}));
+      const btnScale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--controls-scale')) || 1;
+      saveToLocal(KEY_BUTTON_SCALE, btnScale);
+
+      saveToLocal(KEY_CONTROL_COLOR, getComputedStyle(document.documentElement).getPropertyValue('--control-foreground').trim());
+      saveToLocal(KEY_COLOR, timerDisplay.style.color || '');
+
+      saveToLocal(KEY_EDIT_MODE, '0');
+    }
+
+    function resetEdits(){
+      try {
+        localStorage.removeItem(KEY_TIMER_POS);
+        localStorage.removeItem(KEY_TIMER_SIZE);
+        localStorage.removeItem(KEY_BUTTON_POS);
+        localStorage.removeItem(KEY_BUTTON_SIZE);
+        localStorage.removeItem(KEY_BUTTON_SCALE);
+        timerDisplay.style.position = '';
+        timerDisplay.style.left = '';
+        timerDisplay.style.top = '';
+        timerDisplay.style.fontSize = '';
+        controlButtons.style.position = '';
+        controlButtons.style.left = '';
+        controlButtons.style.top = '';
+        controlButtons.querySelectorAll('button').forEach(b => b.style.fontSize = '');
+        applyControlScale(1);
+        symbolColorPicker.value = '#ffffff';
+        document.documentElement.style.setProperty('--control-foreground', '#ffffff');
+        colorPicker.value = '#ffffff';
+        timerDisplay.style.color = '';
+        removeOverlayFor(timerDisplay);
+        removeOverlayFor(controlButtons);
+      } catch(e){}
+      saveToLocal(KEY_CONTROL_COLOR, '#ffffff');
+      saveToLocal(KEY_COLOR, '');
+      saveToLocal(KEY_BUTTON_SCALE, 1);
+    }
+
+    function restoreState(){
+      const s = parseInt(loadFromLocal(KEY_SECONDS) || '0', 10);
+      seconds = Number.isFinite(s) ? s : 0;
+      updateDisplay();
+
+      const running = loadFromLocal(KEY_RUNNING) === '1';
+      isRunning = false;
+      if (running){
+        startBtn.disabled = false;
+        pauseBtn.disabled = true;
+      }
+
+      const bg = loadFromLocal(KEY_BG);
+      if (bg) document.body.style.backgroundImage = `url('${bg}')`;
+
+      const color = loadFromLocal(KEY_COLOR);
+      if (color){
+        colorPicker.value = color;
+        timerDisplay.style.color = color;
+      }
+
+      const controlColor = loadFromLocal(KEY_CONTROL_COLOR);
+      if (controlColor){
+        symbolColorPicker.value = controlColor;
+        document.documentElement.style.setProperty('--control-foreground', controlColor);
+      }
+
+      const mus = loadFromLocal(KEY_MUSIC);
+      if (mus){
+        audio = new Audio(mus);
+        audio.loop = true;
+        playMusicBtn.classList.remove('hidden');
+        playMusicBtn.setAttribute('aria-hidden','false');
+        stopMusicBtn.classList.remove('hidden');
+        stopMusicBtn.setAttribute('aria-hidden','false');
+      }
+
+      const emoji = loadFromLocal(KEY_EMOJI);
+      emojiVersion = emoji === '1';
+      applyEmojiVersion();
+
+      const controls = loadFromLocal(KEY_CONTROLS_VISIBLE);
+      if (controls === '0'){ controlsVisible = false; controlButtons.style.display = 'none'; toggleControlsBtn.textContent = 'Show Timer Controls'; }
+      else { controlsVisible = true; controlButtons.style.display = 'flex'; toggleControlsBtn.textContent = 'Hide Timer Controls'; }
+
+      const boxed = loadFromLocal(KEY_TIMER_BOX);
+      if (boxed === '1') setTimerBoxed(true, false);
+      else setTimerBoxed(false, false);
+
+      const timerPos = loadFromLocal(KEY_TIMER_POS);
+      if (timerPos){
+        try {
+          const p = JSON.parse(timerPos);
+          timerDisplay.style.position = 'absolute';
+          timerDisplay.style.left = p.left + 'px';
+          timerDisplay.style.top = p.top + 'px';
+        } catch(e){}
+      }
+      const buttonPos = loadFromLocal(KEY_BUTTON_POS);
+      if (buttonPos){
+        try {
+          const p = JSON.parse(buttonPos);
+          controlButtons.style.position = 'absolute';
+          controlButtons.style.left = p.left + 'px';
+          controlButtons.style.top = p.top + 'px';
+        } catch(e){}
+      }
+      const timerSize = loadFromLocal(KEY_TIMER_SIZE);
+      if (timerSize){
+        timerDisplay.style.fontSize = parseFloat(timerSize) + 'px';
+      }
+      const buttonScale = parseFloat(loadFromLocal(KEY_BUTTON_SCALE) || '1');
+      if (buttonScale && !Number.isNaN(buttonScale)){
+        applyControlScale(buttonScale);
+      } else {
+        applyControlScale(1);
+      }
+
+      const edit = loadFromLocal(KEY_EDIT_MODE);
+      if (edit === '1'){
+        editMode = true;
+        editModeBtn.textContent = 'Exit Edit Mode';
+        editToolbar.style.display = 'flex';
+        editToolbar.setAttribute('aria-hidden','false');
+        applyEditMode(true);
+      } else {
+        editMode = false;
+        editToolbar.style.display = 'none';
+        editToolbar.setAttribute('aria-hidden','true');
+        applyEditMode(false);
+      }
+    }
+
+    // Initialize
+    updateDisplay();
+    restoreState();
+    setInterval(saveState, 30000);
+
+    (function addFocusOutline(){
+      const css = document.createElement('style');
+      css.textContent = ':focus{ outline: 3px solid rgba(255,255,255,0.14); outline-offset:2px; }';
+      document.head.appendChild(css);
+    })();
+
+    document.querySelectorAll('button').forEach(b => b.style.userSelect = 'none');
+    console.info("Controls color picker changes CSS color for symbol buttons. Note: colorful emoji glyphs may not respond to CSS color changes.");
+
+    function syncMenuAria(){
+      const isWide = window.matchMedia('(min-width:900px)').matches;
+      const pref = loadFromLocal(KEY_MENU_VISIBLE);
+      if (pref === '1') setMenuVisible(true, false);
+      else if (pref === '0') setMenuVisible(false, false);
+      else setMenuVisible(isWide, false);
+    }
+    window.addEventListener('resize', syncMenuAria);
+    syncMenuAria();
+  </script>
+</body>
+</html>
